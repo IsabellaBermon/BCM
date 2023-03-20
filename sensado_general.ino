@@ -1,13 +1,13 @@
 // Current sensor var
-uint32_t actual_Current, prom_Current, sens_Current, sample_counter_i  = 0;
+uint32_t actual_current, avg_current, sens_current, sample_counter = 0;
 uint32_t offset_i = 0;
 // Thurst sensor var
-uint32_t actual_empuje, prom_empuje, sample_counter_e = 0;
+uint32_t actual_thrust, avg_thrust = 0;
 // Temperature sensor var
-uint32_t actual_temp, prom_temp, sample_counter_temp = 0;
+uint32_t actual_temp, avg_temp = 0;
 uint32_t offset_temp = 0;
 // Velocity sensor var
-uint32_t actual_vel, prom_vel, sample_counter_vel = 0;
+uint32_t actual_vel, avg_vel = 0;
 // Default var
 uint32_t period = 500; //ms
 uint32_t fs = 200; //Hz
@@ -15,8 +15,7 @@ uint32_t fs = 200; //Hz
 uint32_t n_samples = 1;
 uint32_t max_current = 1; //A
 // Set clocks
-uint32_t currentTime_i, currentTime_temp, currentTime_e, currentTime_vel = 0; 
-bool iflag, tempflag, tflag, velflag = false;
+uint32_t currentTime = 0; 
 bool start = true;
 
 void setup() {
@@ -30,68 +29,49 @@ void setup() {
 }
 
 ISR(TIMER1_COMPA_vect) {
+  // when actual_time == 1/fs
   TCNT1 = 0;
-  // start other variables clock
-  if (start == true) {    
-    if (currentTime_i=1){
-      tempflag = true;                
-      }
-    if (currentTime_i=2){
-      tflag = true;                
-      }
-    if (currentTime_i=3){
-      velflag = true;
-      start = false;                
-      }
-    }
-  // Increment the current time variable every millisecond
-  if (iflag == true){
-    currentTime_i += 1;               
-    }
-  if (tempflag == true){
-      currentTime_temp += 1;
-    }
-  if (tflag == true){
-      currentTime_e += 1;
-    }
-  if (velflag == true){
-      currentTime_vel += 1;
-    }
+  noInterrupts();
+  update_measurement(sample_counter);
+  interrupts();
 }
 
-uint32_t update_measurement(sample_counter,prom,var){
+void save_data_MEM(uint32_t measurement){
+  // idk !
+}
+
+void update_measurement(uint32_t sample_counter){
     if (sample_counter == n_samples){
-        uint32_t measurement = prom/n_samples;
+        uint32_t measurement_i = avg_current/n_samples;
+        uint32_t measurement_t = avg_thrust/n_samples;
+        uint32_t measurement_vel = avg_vel/n_samples;
+        uint32_t measurement_temp = avg_temp/n_samples;
         // save measurement or show
-        prom, sample_counter = 0;
+        // save_data_MEM(measurement_i)
+        avg_current = 0;
+        avg_thrust = 0;
+        avg_vel = 0;
+        avg_temp = 0;
+        sample_counter = 0;
       }
     else {
-      // sense variable actual = analogRead(); void measure()
-      prom += actual;    
-      sample_counter += 1;        
+      // sense all variables
+      actual_current = sense_current();
+      actual_thrust = sense_thrust();
+      actual_vel = sense_vel();
+      actual_temp = sense_temp();
+      // update average
+      avg_current += actual_current;    
+      avg_thrust += actual_thrust;
+      avg_vel += actual_vel;
+      avg_temp += actual_temp;
+      sample_counter += 1;    
       }
-    switch (var) {
-      case 1: 
-              sample_counter_i = sample_counter; 
-              break;      
-      case 2: 
-              sample_counter_Temp = sample_counter;
-              break;
-      case 3:
-              sample_counter_e = sample_counter;
-              break;
-      case 4: 
-              sample_counter_vel = sample_counter;
-              break;
-      default: 
-              break;
-    }  
-    return prom
   }
   
 uint32_t sense_current(){
   uint32_t voltaje = analogRead(A0) * (5.0 / 1023.0);
-  uint32_t current = offset_i +(voltaje -2.5)/sens_Current; // calculate current 
+  uint32_t current = offset_i +(voltaje -2.5)/sens_current; // calculate current 
   return current
 }
 
@@ -102,33 +82,16 @@ uint32_t sense_temperature(){
 }
 
 uint32_t sense_vel(){
-  uint32_t velp = analogRead(A1) * 100;
+  // Encoder program
+  uint32_t vel = actual_vel;
   return vel
 }
 
-uint32_t sense_empuje(){
-  uint32_t empuje = analogRead(A1) * 100;
-  return empuje
+uint32_t sense_thrust(){
+  uint32_t thrust = analogRead(A3);
+  return thrust
 }
 
 void loop() {
-  // Condition if actual_time == 1/fs
-  noInterrupts();
-  if (currentTime_i >= sample_time) {
-    prom_Current = update_measurement(sample_counter_i,prom_Current,1);
-    currentTime = 0; // Reset clock
-  }  
-  else if (currentTime_temp >= sample_time) {
-    prom_temp = update_measurement(sample_counter_temp,prom_temp,2);
-    currentTime_temp = 0; // Reset clock
-  }
-  else if (currentTime_e >= sample_time) {
-    prom_temp = update_measurement(sample_counter_e,prom_Emp,3);
-    currentTime_e = 0; // Reset clock
-  }
-  else if (currentTime_vel >= sample_time) {
-    prom_empuje = update_measurement(sample_counter_temp,prom_empuje,4);
-    currentTime_vel = 0; // Reset clock
-  }
-  interrupts();
+
 }
