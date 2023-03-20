@@ -107,6 +107,7 @@ void update_measurement(uint32_t sample_counter){
     else {
       // sense all variables
       actual_current = sense_current();
+      delayMicroseconds(104); // Wait for the ADC to settle
       actual_thrust = sense_thrust();
       actual_vel = sense_vel();
       actual_temp = sense_temp();
