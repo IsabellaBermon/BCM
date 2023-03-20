@@ -39,7 +39,7 @@ void setup() {
   pinMode(acs,INPUT);
   pinMode(lm35,INPUT);
   m_thrust.begin(DOUT_loadcell, CLK_loadcell);
-  m_thrust.set_scale(scale_cell); // scale 
+  m_thrust.set_scale(scale_cell); // Establecemos la escala
   m_thrust.tare(20);  //El peso actual es considerado Tara.
   // timer counter setup
   TCCR1A = 0;
@@ -55,6 +55,34 @@ ISR(TIMER1_COMPA_vect) {
   TCNT1 = 0;
   noInterrupts();
   update_measurement(sample_counter);
+  interrupts();
+}
+
+void setup_compare_match(int value){
+  noInterrupts();
+  if (value / 62 < 65535) {
+    TCCR1B |= B00000001; //Set prescalar to 1
+    OCR1A = value / 62;
+  }
+  else {
+    value /= 1e6; // convert to milliseconds
+    if (value / 0.5 < 65535) {
+      TCCR1B |= B00000010; //Set prescalar to 8
+      OCR1A = value / 0.5;
+    }
+    else {
+      value /= 1e3; // convert to microseconds
+      if (value / 4 < 65535) {
+        TCCR1B |= B00000011; //Set prescalar to 64
+        OCR1A = value / 4;
+      }
+      else {
+        value /= 16;
+        TCCR1B |= B00000100; //Set prescalar to 256
+        OCR1A = value / 16;
+      }
+    }
+  }
   interrupts();
 }
 
@@ -115,5 +143,7 @@ uint32_t sense_thrust(){
 }
 
 void loop() {
-
+  float t = 1.0 / fs;
+  int value = t * 1e9; // convert to nanoseconds
+  // when fs change call setup_compare_match(value)
 }
