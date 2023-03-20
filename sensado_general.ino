@@ -73,12 +73,12 @@ void setup_compare_match(int value){
     else {
       value /= 1e3; // convert to microseconds
       if (value / 4 < 65535) {
-        TCCR1B |= B00000011; //Set prescalar to 64
+        TCCR1B |= B00000100; //Set prescalar to 64
         OCR1A = value / 4;
       }
       else {
         value /= 16;
-        TCCR1B |= B00000100; //Set prescalar to 256
+        TCCR1B |= B00000110; //Set prescalar to 256
         OCR1A = value / 16;
       }
     }
