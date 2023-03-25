@@ -1,6 +1,5 @@
 bool LED_STATE = false;
 volatile int contador = 0;   // Variable para freq de RPM
-// Variables globales
 volatile uint32_t contador_copy = 0; //Valor del contador de pulsos por segundo
 volatile uint32_t pulse_start_time = 0;  // Tiempo de referencia inicio
 volatile uint32_t pulse_end_time = 0;  // Tiempo de referencia final
