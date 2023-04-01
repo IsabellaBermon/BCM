@@ -94,9 +94,28 @@ void update_measurement(){
 
 void loop() {
   if (Serial.available()) {
+    // Nota : validar si es voltaje o frecuencia para hacer el comando 
     String voltageM = Serial.readStringUntil('\n');
     voltageMotor = voltageM.toInt();
     analogWrite(pinMotor,voltageMotor);
+    // Opción de frecuencia 
+    String f = Serial.readStringUntil('\n'); 
+    float fs = f.toInt();
+    if ( 5000 < fs <= 60000 ) {
+      set_timer1_prescaler(4);
+      OCR1A = (uint32_t) (16000000/256)/fs ;
+      Serial.print("Contador :");
+      Serial.println( (uint32_t) (16000000/256)/fs);     
+    }
+    else if ( fs < 5000 ) {
+      Serial.println("Cambio de preescalador");
+      set_timer1_prescaler(3);
+      OCR1A = (uint32_t) (16000000/64)/fs ;
+      Serial.print("Contador :");
+      Serial.println( (uint32_t) (16000000/64)/fs); 
+    }
+    // 256 de 5KHz a 60KHZ
+    // 63 de 1kHz a 5KHZ
   }
   pulse_end_time = millis(); 
   if (pulse_end_time > (pulse_start_time + 1000)) {   
