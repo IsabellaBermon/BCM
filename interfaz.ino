@@ -179,7 +179,7 @@
     // Gurda/Imprime los valores sensados can n muestras
     if (verbose_flag){
       if (verbose) {
-        //Serial.print(" I: ");
+        Serial.print(" I: ");
         Serial.print(measurement_i,3);
         Serial.print(" A | ");
         Serial.print(" V: ");
