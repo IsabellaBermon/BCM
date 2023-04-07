@@ -1,7 +1,7 @@
  /**
   * @file Interfaz.ino
   *
-  * @mainpage Banco de pruebas de caracterización de motores y hélices
+  * @mainpage Banco de pruebas de caracterización de motores y hélices 
   *
   * @authors Creado por: Isabella Bermón Rojas y
   *                      Daniela Cuartas Marulanda.
@@ -26,6 +26,7 @@
   *
   * @section librerías Librerías
   * Celda de carga: https://github.com/whandall/NBHX711
+  * Desarollo en https://github.com/IsabellaBermon/BCM.git
   *
   */
 
@@ -43,7 +44,7 @@
   uint32_t t_actual = 0;
   uint32_t t_anterior = 0;
   uint32_t v_max = 100;
-  uint32_t period = 500000; //en us
+  uint32_t period = 500000; // en us
   int32_t m = v_max*1000000/(period/2);
   int32_t b = 0;
   int32_t number_points = 1;
@@ -56,26 +57,26 @@
   int8_t percentage = 50;
 
   // Variables default de interfaz
-  uint16_t average = 1;
-  uint8_t maxcurrent = 1; //1A
-  bool verbose = false; //verbose = off
+  uint16_t average = 1; // número de muestras
+  uint8_t maxcurrent = 1; // 1 A
+  bool verbose = false; // verbose = off
   uint8_t mode = 1; //1 = step, 2 = triangular
-  uint32_t fsample = 200; //hz
-  uint32_t ftime = 16000000/256;
+  uint32_t fsample = 200; // Hzz
+  uint32_t ftime = 16000000/256; // f pre-escalador 
   uint16_t sample_counter = 0;
-  uint32_t duty = 0;
-  bool verbose_flag = false;
+  uint8_t duty = 0;
+  bool verbose_flag = false; // bandera para guardar o mostrar
   
   // Verificacion de comandos
   bool incorrect = false;
   const int MAX_WORDS = 3;   ///< Constante global que determina el tamaño de la lista de elementos
   String complete[MAX_WORDS]; ///< Lista de máximo dos elementos para verificar válidez del comando
 
-  // Sensado de señales
+  // Sensado de señales -------------------------
   // Clock variables
   volatile uint32_t pulse_start_time = 0;  // Tiempo de referencia inicio
   volatile uint32_t pulse_end_time = 0;  // Tiempo de referencia final
-  // Pines de sensores y motor para la generacion
+  // Pines de sensores y motor para la generación
   int acs = A0;
   int lm35 = A1;
   const int LOADCELL_DOUT_PIN = A4;
@@ -84,7 +85,7 @@
   const byte interruptPin = 2; //< Pin 2 para interrupción de rpm
   int pinMotor = 6; // generación de señal motor
   
-  // Variables de sensado ----------------------
+  // Variables de cada sensor ----------------------
   
   // Variables sensor de corriente
   float actual_current, avg_current, measurement_i = 0;
@@ -94,18 +95,26 @@
   
   // Variables sensor de rpm
   volatile int contador = 0;   // Valor del contador de pulsos por segundo
-  uint32_t actual_vel, actual_vel_freq, avg_vel = 0;
-  float measurement_vel = 0;
+  uint16_t actual_vel, actual_vel_freq, avg_vel = 0;
+  uint16_t measurement_vel = 0;
   
   // Variable sensor de empuje
   float actual_thrust, avg_thrust, measurement_thrust = 0;
 
+  // Variables posición de cada medición
+  int x_=0; // current (4 bytes)
+  int y_=4; // rpm(2 bytes)
+  int w_=6;  // thrust (4 bytes)
+  int z_= 10; // temperature (4 bytes)
+  int p_= 14; // duty (1 byte)
+  int u= 0; // index de memoria
+
   /**
    * Se inicializan los pines del motor y los sensores.
+   * Se inicializa objeto de celda de carga 
    * Se inicializa el pin de interrupción de rpm
    * Se configura el reloj interno del arduino y el preescalador para interrupción de frecuencia de muestreo.
-   * Se inicializa el monitor serial.
-   * Se inicializa objeto de celda de carga 
+   * Se inicializa el monitor serial   
    */
   void setup(){
     pinMode(pinMotor,OUTPUT);
@@ -167,30 +176,31 @@
       interrupts();
     }
 
-    // Imprime por serial los valores sensados
+    // Gurda/Imprime los valores sensados can n muestras
     if (verbose_flag){
-      Serial.print(" I: ");
-      Serial.print(measurement_i,3);
-      Serial.print(" A | ");
-      Serial.print(" V: ");
-      Serial.print(measurement_vel);
-      Serial.print(" m/s | ");    
-      Serial.print(" E: ");
-      Serial.print(measurement_thrust,3);
-      Serial.print(" N | ");
-      Serial.print("T: ");
-      Serial.print(measurement_temp);
-      Serial.print(" C | ");   
-      Serial.print(" Duty: ");
-      Serial.print(duty);
-      Serial.println(" %");  
+      if (verbose) {
+        //Serial.print(" I: ");
+        Serial.print(measurement_i,3);
+        Serial.print(" A | ");
+        Serial.print(" V: ");
+        Serial.print(measurement_vel);
+        Serial.print(" m/s | ");    
+        Serial.print(" E: ");
+        Serial.print(measurement_thrust,3);
+        Serial.print(" N | ");
+        Serial.print("T: ");
+        Serial.print(measurement_temp);
+        Serial.print(" C | ");   
+        Serial.print(" Duty: ");
+        Serial.println(" %"); 
+      }
+      else {
+        save_data_MEM(measurement_i,measurement_vel,measurement_thrust,measurement_temp,duty);
+      }
       verbose_flag = false; 
     }
-    else {
-      save_data_MEM(measurement_i,measurement_vel,measurement_thrust,measurement_temp,duty);
-    }
 
-    // Sensa los rpm por medio de interrupcion
+    // Sensa los rpm por medio de interrupcion con ventana de 1 segundo
     pulse_end_time = millis(); 
     if (pulse_end_time > (pulse_start_time + 1000)) {   
       noInterrupts();
@@ -462,7 +472,7 @@
     float sens_current = 0.185;
     float voltaje = analogRead(acs) * (5.0 / 1023.0);  
     float current = abs(voltaje -2.48)/sens_current-0.12 ; // calculate current 
-    return current;
+    return abs(current);
   }
 
   /**
@@ -473,8 +483,8 @@
     hx711.update();
     float thrust = (hx711.getUnits(10)-7.00)*35 ;
     // Al valor de empuje obtenido se resta el peso del motor
-    //Serial.println(thrust);
-    thrust = (abs(thrust -1.95)/1000)*9.8;    
+    // y multiplica por gravedad para medición en Newtons
+    thrust = (abs(thrust -6.23)/1000)*9.8;    
     return thrust;
   }
 
@@ -489,20 +499,19 @@
   }
 
   /**
-    * Actualiza los valores de las variables sensadas y las guarda en la memoria EEPROM.
+    * Actualiza los valores de las variables sensadas y activa la bandera para visualizar o guardar en EEPROM.
     *
     */
   void update_measurement(){
-    // Actualiza cuando se cumpla el número de muestras
+    // Actualiza medida cuando se cumpla el número de muestras promediando
     if (sample_counter == average){
         measurement_i = avg_current/average;
         measurement_vel = avg_vel/average;
         measurement_temp = avg_temp/average;
         measurement_thrust = actual_thrust/average;
-        measurement_vel = measurement_vel*2*3.1416*0.01/60;
-        if (verbose) {
-          verbose_flag = true;
-        }
+        // Para obtener la velocidad en base RPM se hace la siguiente conversión
+        //measurement_vel = measurement_vel*2*3.1416*0.01/60;
+        verbose_flag = true;
         avg_current = 0;
         avg_vel = 0;
         avg_temp = 0;
@@ -510,13 +519,13 @@
         sample_counter = 0;
     }
     else {
-      // sensa todas las variables
+      // Sensa todas las variables
       actual_current = sense_current();
-      delayMicroseconds(104); // Wait for the ADC to settle
+      delayMicroseconds(104); // espera los ciclos de reloj para que el ADC mida correctamente
       actual_vel = actual_vel_freq;  
       actual_thrust = sense_thrust();
       actual_temp = sense_temperature();
-      // update average
+      // Actualiza el promedio sensado
       avg_current += actual_current;   
       avg_vel += actual_vel;
       avg_thrust += actual_thrust;
@@ -526,7 +535,7 @@
   }
 
   /**
-    * Interrupción del reloj interno del arduino para medir la frecuencia de muestreo.
+    * Interrupción del reloj interno del arduino para medir cuando se cumple la frecuencia de muestreo.
     *
     */
   ISR(TIMER1_COMPA_vect){
@@ -552,30 +561,55 @@
     * @param temperatura
     * @param duty
     */
-  void save_data_MEM(float corriente, float rpm, float empuje, float temperatura, uint32_t duty){
-    EEPROM.put(eeAddress, corriente);
-    eeAddress += 4;
-    EEPROM.put(eeAddress, rpm);
-    eeAddress += 4;
-    EEPROM.put(eeAddress, empuje);
-    eeAddress += 4;
-    EEPROM.put(eeAddress, temperatura);
-    eeAddress += 4;
-    EEPROM.put(eeAddress, duty);
-    eeAddress += 4;
-    if (eeAddress == 1020){
-      eeAddress = 0;
+    void save_data_MEM(float corriente, uint16_t rpm, float celda, float temperatura, uint8_t pwm){
+      EEPROM.put(x_, corriente);
+      EEPROM.put(y_, rpm);
+      EEPROM.put(z_, celda);
+      EEPROM.put(w_, temperatura);  
+      EEPROM.put(p_, pwm);
+      x_ += 15;
+      y_ += 15;
+      w_ += 15;
+      z_ += 15;
+      p_ += 15;
+      if(x_ == 1020){
+        x_=0; 
+        y_=4; 
+        w_=6;  
+        z_ = 10; 
+        p_ = 14; 
+      } 
     }
-  }
 
   /**
     * Extrae las variables de la memoria EEPROM
     *
     */
-  void extract_data_MEM(){
-    for (int i = 0; i < EEPROM.length(); i+= 4){ 
-      Serial.print(i);
-      Serial.print(",");
-      Serial.println(EEPROM.get(i, resultado),3);
+    void extract_data_MEM(){
+      u = 0;
+      while(u<1020){
+        u +=1;
+        Serial.print(EEPROM.get(x_, measurement_i),3);
+        Serial.print(", ");
+        Serial.print(EEPROM.get(y_, measurement_vel));
+        Serial.print(", ");
+        Serial.print(EEPROM.get(z_, measurement_thrust),3);
+        Serial.print(", ");
+        Serial.print(EEPROM.get(w_, measurement_temp),3);
+        Serial.print(", ");
+        Serial.println(EEPROM.get(p_, duty));
+        x_ += 15;
+        y_ += 15;
+        w_ += 15;
+        z_ += 15;
+        p_ += 15;
+        if(x_ == 1020){
+          u = 1020; // guarda hasta el máximo espacio
+          x_= 0; 
+          y_= 4; 
+          w_= 6;  
+          z_ = 10;
+          p_ = 14;
+        }
+      }
     }
-  }
