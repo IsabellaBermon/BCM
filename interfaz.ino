@@ -2,9 +2,10 @@
 #include <stdio.h>
 #include <ctype.h>
 #include <EEPROM.h>
+#include <NBHX711.h>
 
 // Variables de guardado en memoria
-int eeAddress, apuntador,copia_apuntador = 0;
+uint16_t eeAddress, apuntador = 0;
 float resultado;
 
 // Variables para generar señal triangular
@@ -16,23 +17,22 @@ int32_t m = v_max*1000000/(period/2);
 int32_t b = 0;
 int32_t number_points = 1;
 int32_t acum = 0;
-float y, y_aux = 0;
+float y, y_out = 0;
 bool ban_step, ban_tri = true;
 bool ban_stimulus = false;
 // Variables para generar señal triangular
-int32_t percentage = 50;
-float y_out = 0;
+int8_t percentage = 50;
 
 // Variables default de interfaz
-int32_t average = 1;
-int32_t maxcurrent = 1; //1A
+uint16_t average = 1;
+uint8_t maxcurrent = 1; //1A
 bool verbose = false; //verbose = off
-int32_t mode = 1; //1 = step, 2 = triangular
+uint8_t mode = 1; //1 = step, 2 = triangular
 uint32_t fsample = 200; //hz
 uint32_t ftime = 16000000/256;
-int n_samples = 100;
-int sample_counter = 0;
-uint32_t max_current = 1; //A
+//int8_t n_samples = 100;
+uint16_t sample_counter = 0;
+uint8_t duty = 0;
 
 // Verificacion de comandos
 bool incorrect = false;
@@ -46,6 +46,9 @@ volatile uint32_t pulse_end_time = 0;  // Tiempo de referencia final
 // Pins de sensores y motor para la generacion
 int acs = A0;
 int lm35 = A1;
+const int LOADCELL_DOUT_PIN = A4;
+const int LOADCELL_SCK_PIN = A5;
+NBHX711 hx711(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 const byte interruptPin = 2; ///< Pin 2 para interrupciones, el arduino UNO attachInterrupt solo sirve en 2 y 3
 int pinMotor = 6;
 // Variables por sensor ----------------------
@@ -59,14 +62,21 @@ float offset_temp = 0;
 // Velocity sensor var
 volatile int contador = 0;   // Valor del contador de pulsos por segundo
 uint32_t actual_vel,actual_vel_freq, avg_vel = 0;
+// thrust sensor var
+float actual_thrust, avg_thrust = 0;
 float measurement_i = 0;
 float measurement_vel = 0;
 float measurement_temp = 0;
+float measurement_thrust = 0;
+
 
 void setup(){
   pinMode(pinMotor,OUTPUT);
   pinMode(acs,INPUT);
   pinMode(lm35,INPUT);
+  hx711.begin();
+  hx711.setScale(16610.857);
+  hx711.tare(10);
   //analogWrite(pinMotor,voltageMotor);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(interruptPin,INPUT_PULLUP);
@@ -95,7 +105,7 @@ void loop() {
         y = m*(float(acum)/1000000) + b;  // m = v/s
         y = constrain(y,0,100);
         y_out = map(int(y*100),0,v_max*100,0,255);
-        //Serial.println(y);
+        duty = y_out*100/255;
         analogWrite(pinMotor,y_out);
         if(acum >= period/2  && ban_tri){
           m = -m;
@@ -118,15 +128,21 @@ void loop() {
 
   // Imprime por serial
   if (verbose){
-    Serial.print(" V: ");
-    Serial.print(measurement_vel);
-    Serial.print(" m/s |");
-    Serial.print("I: ");
+    Serial.print(" I: ");
     Serial.print(measurement_i);
     Serial.print(" A | ");
+    Serial.print(" V: ");
+    Serial.print(measurement_vel);
+    Serial.print(" m/s | ");    
+    Serial.print(" E: ");
+    Serial.print(measurement_thrust);
+    Serial.print(" N | ");
     Serial.print("T: ");
     Serial.print(measurement_temp);
-    Serial.println(" C ");      
+    Serial.print(" C | ");   
+    Serial.print(" Duty: ");
+    Serial.print(duty);
+    Serial.println(" %");   
   }
 
   // Sensar los rpm por medio de interrupciones
@@ -142,6 +158,7 @@ void loop() {
   // Hace la validación de comandos
   if(Serial.available() > 0) {
     TIMSK1 |= B00000000; //Desenable compare match A
+    //delay(10);
     String command = Serial.readStringUntil('\n');
     command.toLowerCase();
     TIMSK1 |= B00000010; //Enable compare match A
@@ -345,14 +362,14 @@ void stimulus(int percentage){
     y += percentage;
     y = constrain(y,0,100);
     y_out = map(y,0,v_max,0,255);
-    //Serial.println(y);
+    duty = y_out*100/255;
     analogWrite(pinMotor,y_out);
   }
   else if(y >= 100 || !ban_step){      
     y -= percentage;
     y = constrain(y,0,100);
     y_out = map(y,0,v_max,0,255);
-    //Serial.println(y);
+    duty = y_out*100/255;
     analogWrite(pinMotor,y_out);
     ban_step = false;
     if(y == 0){
@@ -372,6 +389,13 @@ float sense_current(){
   return current;
 }
 
+float sense_thrust(){
+  hx711.update();
+  float thrust = (hx711.getUnits(10)-7.00)*35 ;
+  thrust = abs(thrust -18.1)*9.8;
+  return thrust;
+}
+
 float sense_temperature(){
   float voltage = analogRead(lm35) * (5.0 / 1023.0);
   float temp = offset_temp + voltage * 100;
@@ -379,32 +403,39 @@ float sense_temperature(){
 }
 
 void update_measurement(){
-  if (sample_counter == n_samples){
-      measurement_i = avg_current/n_samples;
-      measurement_vel = avg_vel/n_samples;
-      measurement_temp = avg_temp/n_samples;
+  if (sample_counter == average){
+      measurement_i = avg_current/average;
+      measurement_vel = avg_vel/average;
+      measurement_temp = avg_temp/average;
+      measurement_thrust = actual_thrust/average;
       measurement_vel = measurement_vel*2*3.1416*0.01/60;
-      save_data_MEM(measurement_i,measurement_vel,measurement_temp, measurement_temp);
-      // Serial.print(measurement_vel);
-      // Serial.println(" VEL m/s ");
-      // Serial.print(measurement_i);
-      // Serial.print(" A | ");
-      // Serial.print(measurement_temp);
-      // Serial.println(" C");
+      //save_data_MEM(measurement_i,measurement_vel,measurement_temp, measurement_thrust);
+//     Serial.print(measurement_vel);
+//     Serial.print(" VEL m/s ");
+//     Serial.print(measurement_i);
+//     Serial.print(" A | ");
+//     Serial.print(measurement_thrust);
+//     Serial.print(" g | ");
+//     Serial.print(measurement_temp);
+//     Serial.println(" C");
       avg_current = 0;
       avg_vel = 0;
       avg_temp = 0;
+      actual_thrust = 0;
       sample_counter = 0;
   }
   else {
     // sense all variables
     actual_current = sense_current();
     delayMicroseconds(104); // Wait for the ADC to settle
-    actual_vel = actual_vel_freq;    
+    actual_vel = actual_vel_freq;  
+    actual_thrust = sense_thrust();
+    //delayMicroseconds(104); // Wait for the ADC to settle
     actual_temp = sense_temperature();
     // update average
     avg_current += actual_current;   
     avg_vel += actual_vel;
+    avg_thrust += actual_thrust;
     avg_temp += actual_temp;
     sample_counter += 1;    
   }
@@ -431,7 +462,6 @@ void save_data_MEM(float corriente, float rpm, float empuje, float temperatura){
   eeAddress += 4;
   EEPROM.put(eeAddress, temperatura);
   eeAddress += 4;
-  apuntador ++;
 }
 
 void extract_data_MEM(){
